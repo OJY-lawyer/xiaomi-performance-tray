@@ -1,0 +1,4 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><AssemblyName>XiaomiPerformance.Cli</AssemblyName></PropertyGroup>
+  <ItemGroup><ProjectReference Include="../XiaomiPerformance.Core/XiaomiPerformance.Core.csproj" /></ItemGroup>
+</Project>

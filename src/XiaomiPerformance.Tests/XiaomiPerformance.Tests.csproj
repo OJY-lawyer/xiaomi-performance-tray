@@ -1,0 +1,4 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><UseWindowsForms>true</UseWindowsForms></PropertyGroup>
+  <ItemGroup><ProjectReference Include="../XiaomiPerformance.Core/XiaomiPerformance.Core.csproj"/><Compile Include="../XiaomiPerformance.Tray/TrayContext.cs" Link="TrayContext.cs"/><Compile Include="../XiaomiPerformance.Tray/Diagnostics.cs" Link="Diagnostics.cs"/></ItemGroup>
+</Project>
