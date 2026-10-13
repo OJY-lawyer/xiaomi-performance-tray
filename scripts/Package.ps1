@@ -1,4 +1,4 @@
-param([ValidatePattern('^\d+\.\d+\.\d+(?:[-.][A-Za-z0-9.-]+)?$')][string]$Version = '0.2.0')
+param([ValidatePattern('^\d+\.\d+\.\d+(?:[-.][A-Za-z0-9.-]+)?$')][string]$Version = '0.2.1')
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path $PSScriptRoot -Parent
 & (Join-Path $PSScriptRoot 'Build.ps1')
@@ -22,6 +22,4 @@ Copy-Item -LiteralPath (Join-Path $repoRoot 'Disable-Autostart.ps1') -Destinatio
 $archivePath = Join-Path $distRoot "xiaomi-performance-tray-$Version-win-x64.zip"
 if (Test-Path -LiteralPath $archivePath) { throw "Archive already exists: $archivePath" }
 Compress-Archive -Path (Join-Path $stageRoot '*') -DestinationPath $archivePath
-$hash = Get-FileHash -LiteralPath $archivePath -Algorithm SHA256
-"$($hash.Hash.ToLowerInvariant())  $([IO.Path]::GetFileName($archivePath))" | Set-Content -LiteralPath "$archivePath.sha256" -Encoding ascii
 Write-Output $archivePath

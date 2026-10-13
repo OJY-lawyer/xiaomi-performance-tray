@@ -21,6 +21,7 @@ internal sealed class TrayContext : ApplicationContext
     private readonly ToolStripMenuItem nextItem;
     private bool busy, disposed;
     private string? uiFailure;
+    private string? lastReadFailure;
 
     public TrayContext(ModeController controller)
     {
@@ -90,6 +91,9 @@ internal sealed class TrayContext : ApplicationContext
         {
             var result = await operation(lifetime.Token);
             if (disposed) return;
+            if (!notify && !result.Success && lastReadFailure != result.Message)
+                Diagnostics.Write("refresh_failure", result.Message);
+            lastReadFailure = result.Success ? null : result.Message;
             uiFailure = null;
             SafeApplyStatus();
             if (notify) Diagnostics.Write("user_operation", new { result.Code, result.Message });
@@ -129,7 +133,8 @@ internal sealed class TrayContext : ApplicationContext
         var energy = controller.EnergySaver;
         energyItem.Text = energy?.Snapshot is { } power
             ? $"Windows 节能：{(power.Enabled ? "开启" : "关闭")}{(power.SupportsWrites ? "" : "（仅查看）")}" : "Windows 节能：状态未确认";
-        sourceItem.Text = controller.IsSimulation ? "模拟状态，未改变电脑设置" : (isFresh ? (state.AllowedTargets?.Count == 1 ? "供电资格待确认，暂仅开放智能" : state.AllowedTargets?.Contains(PerformanceMode.Rage) == true ? "额定供电：静谧／智能／狂暴" : "省电／智能／极速") : "请检查管家或打开电池与性能页同步");
+        sourceItem.Text = controller.IsSimulation ? "模拟状态，未改变电脑设置" : (isFresh ? (state.AllowedTargets?.Count == 1 ? "供电资格待确认，暂仅开放智能" : state.AllowedTargets?.Contains(PerformanceMode.Rage) == true ? "额定供电：静谧／智能／狂暴" : "省电／智能／极速") : Shorten(state.Detail, 90));
+        sourceItem.ToolTipText = state.Detail;
         var activeGroup = state.AllowedTargets is { Count: 3 } ? state.AllowedTargets : PerformanceModes.Cycle;
         int slot = 0;
         foreach (var (mode, item) in modes)

@@ -7,7 +7,7 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <RestoreIgnoreFailedSources>true</RestoreIgnoreFailedSources>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
-    <Version>0.2.0</Version>
+    <Version>0.2.1</Version>
     <DebugType Condition="'$(Configuration)' == 'Release'">none</DebugType>
   </PropertyGroup>
 </Project>

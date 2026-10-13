@@ -14,6 +14,18 @@ internal static class Program
         Directory.CreateDirectory(directory);
         void Check(string name, bool value) { if (!value) throw new Exception(name); checks.Add(new { name, passed = true }); }
         EnergySaverTests.Run(Check);
+        foreach (var version in new[] { "5.8.1.121", "5.8.1.130" })
+        {
+            var root = Path.Combine(OemCompatibility.ManagerBase, version);
+            Check($"Reviewed manager {version} is accepted", OemCompatibility.ResolveManagerRoot(Path.Combine(root, "XiaomiPcManager.exe"), version, "小米电脑管家") == root);
+        }
+        Check("Unknown manager version remains blocked", CompatibilityRejects(Path.Combine(OemCompatibility.ManagerBase, "5.8.1.131", "XiaomiPcManager.exe"), "5.8.1.131", "小米电脑管家"));
+        Check("Version folder and executable resource must agree", CompatibilityRejects(Path.Combine(OemCompatibility.ManagerBase, "5.8.1.130", "XiaomiPcManager.exe"), "5.8.1.121", "小米电脑管家"));
+        Check("Copied manager outside reviewed installation is blocked", CompatibilityRejects(Path.Combine(directory, "5.8.1.130", "XiaomiPcManager.exe"), "5.8.1.130", "小米电脑管家"));
+        Check("Wrong manager product remains blocked", CompatibilityRejects(Path.Combine(OemCompatibility.ManagerBase, "5.8.1.130", "XiaomiPcManager.exe"), "5.8.1.130", "other"));
+        Check("Exact quoted service executable is accepted", OemCompatibility.MatchesServiceImage('"' + Path.Combine(OemCompatibility.ServiceRoot, "MiService.exe") + '"'));
+        Check("Service path substring cannot qualify another executable", !OemCompatibility.MatchesServiceImage(Path.Combine(directory, "MiService", "4.1.1.648", "MiService.exe")));
+        Check("Service command arguments do not bypass executable validation", !OemCompatibility.MatchesServiceImage('"' + Path.Combine(OemCompatibility.ServiceRoot, "MiService.exe") + "\" --other"));
         Check("IFOK captured nonstandard frame", VendorProtocol.TryParse(Convert.FromHexString("000000000C08031005"), out var frame) && frame == new VendorFrame(3, 5));
         Check("IFOK captured standard frame", VendorProtocol.TryParse(Convert.FromHexString("000000000C08031004"), out frame) && frame == new VendorFrame(3, 4));
         Check("SET ACK is success code, not mode", VendorProtocol.TryParse(Convert.FromHexString("000000000C08011004"), out frame) && frame == new VendorFrame(1, 4));
@@ -98,6 +110,8 @@ internal static class Program
     }
     private static object Field(object target, string name) => target.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(target)!;
     private static bool Throws(Action action) { try { action(); return false; } catch (ArgumentOutOfRangeException) { return true; } }
+    private static bool CompatibilityRejects(string path, string version, string product)
+    { try { OemCompatibility.ResolveManagerRoot(path, version, product); return false; } catch (InvalidOperationException) { return true; } }
     private static void PumpUntil(Func<bool> done)
     {
         var deadline = DateTime.UtcNow.AddSeconds(4);

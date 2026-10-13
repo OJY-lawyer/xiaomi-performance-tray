@@ -4,7 +4,6 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO.Pipes;
 using System.Runtime.InteropServices;
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -20,8 +19,7 @@ public sealed class XiaomiBackend : IPerformanceBackend
 {
     internal const string PipeName = "E09DF953-5B84-4CB7-A23B-969218E24781";
     internal const string RegistryPath = @"Software\MI\SvrCModule\PerformanceMode\POWER";
-    internal const string ManagerRoot = @"C:\Program Files\MI\XiaomiPCManager\5.8.1.121";
-    internal const string ServiceRoot = @"C:\Program Files (x86)\Timi Personal Computing\MiService\4.1.1.648\MiDeviceService";
+    private static readonly string ServiceRoot = Path.Combine(OemCompatibility.ServiceRoot, "MiDeviceService");
     internal const string ManagerLog = @"C:\ProgramData\MI\XiaomiPcManager\Log\XiaomiPcManager_Log.txt";
     private readonly PublishedModeLog log = new(ManagerLog);
     private readonly Dictionary<string, (long Length, DateTime Modified)> checkedFiles = new();
@@ -152,14 +150,16 @@ public sealed class XiaomiBackend : IPerformanceBackend
         {
             if (managers.Length != 1 || services.Length != 1 || tuning.Length != 1)
                 throw new InvalidOperationException("请保持小米电脑管家及原厂设备、智能调度服务正常运行，再使用托盘。");
-            if (!string.Equals(managers[0].MainModule?.FileName, Path.Combine(ManagerRoot, "XiaomiPcManager.exe"), StringComparison.OrdinalIgnoreCase))
-                throw new InvalidOperationException("管家版本或路径已变化，需要重新核验接口。");
+            var managerPath = managers[0].MainModule?.FileName ?? throw new InvalidOperationException("无法确认原厂管家安装路径。");
+            var managerInfo = FileVersionInfo.GetVersionInfo(managerPath);
+            var managerRoot = OemCompatibility.ResolveManagerRoot(managerPath, managerInfo.FileVersion, managerInfo.ProductName);
             using var serviceKey = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\MiService");
-            if (serviceKey?.GetValue("ImagePath") is not string imagePath || !imagePath.Contains(@"\MiService\4.1.1.648\MiService.exe", StringComparison.OrdinalIgnoreCase))
+            if (serviceKey?.GetValue("ImagePath") is not string imagePath || !OemCompatibility.MatchesServiceImage(imagePath))
                 throw new InvalidOperationException("小米服务版本已变化，需要重新核验接口。");
-            CheckFile(Path.Combine(ManagerRoot, "SvrCModule.dll"), "5E4FE0B950CCC280E5E37566B56A11AB0F2D5DE3E686481797A30A038ED3E55C", force);
-            CheckFile(Path.Combine(ServiceRoot, "MiDeviceServiceEntry.dll"), "F292C9DAE9AAC37BBCE14F1A65179BCF53B0A328F28B1FD8F452DF3968A4A268", force);
-            CheckFile(Path.Combine(ServiceRoot, "MiSmartTuning.exe"), "A07CBF86993289BC73A7D2B1500A1EF81C5F2903CEDD4848F9EE2D28DC01602E", force);
+            CheckFile(Path.Combine(managerRoot, "SvrCModule.dll"), "1.0.0.1", "SvrCModule", force);
+            CheckFile(Path.Combine(managerRoot, "PcControlCenter.dll"), managerInfo.FileVersion!, "PcControlCenter", force);
+            CheckFile(Path.Combine(ServiceRoot, "MiDeviceServiceEntry.dll"), "1.0.0.0", "MiDeviceServiceEntry", force);
+            CheckFile(Path.Combine(ServiceRoot, "MiSmartTuning.exe"), "1.0.0.1", "Mi SmartTuning", force);
             if (force || runtime is null || runtime.ServicePid != services[0].Id || runtime.ManagerPid != managers[0].Id || DateTime.UtcNow - runtimeChecked > TimeSpan.FromMinutes(1))
             {
                 runtime = new RuntimeState(managers[0].Id, services[0].Id,
@@ -171,14 +171,12 @@ public sealed class XiaomiBackend : IPerformanceBackend
         finally { foreach (var process in managers.Concat(services).Concat(tuning)) process.Dispose(); }
     }
 
-    private void CheckFile(string path, string expected, bool force)
+    private void CheckFile(string path, string version, string product, bool force)
     {
         var info = new FileInfo(path);
         if (!info.Exists) throw new FileNotFoundException("缺少已核验的原厂文件，请先恢复小米电脑管家。", path);
         if (!force && checkedFiles.TryGetValue(path, out var check) && check.Length == info.Length && check.Modified == info.LastWriteTimeUtc) return;
-        using var input = File.OpenRead(path);
-        if (Convert.ToHexString(SHA256.HashData(input)) != expected)
-            throw new InvalidOperationException("原厂文件已更新，与已核验版本不符；为避免错误调用，已暂停切换。");
+        OemCompatibility.CheckVersionResource(path, version, product);
         checkedFiles[path] = (info.Length, info.LastWriteTimeUtc);
     }
 

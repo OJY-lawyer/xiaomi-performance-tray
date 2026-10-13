@@ -17,7 +17,7 @@ if (options.Command == "help")
     模拟必须显式增加 --simulate；--state-file <路径> 指定独立模拟状态文件。
     示例：XiaomiPerformance.Cli next --simulate --state-file .\demo.json --json
     模拟文件不存在时，初始模拟模式为智能。默认 status 只读取管家发布状态；set/next 经原厂服务执行。
-    0.2.0：额定供电为静谧/智能/狂暴，其他条件为省电/智能/极速；next自动跟随当前原厂组。
+    0.2.1：额定供电为静谧/智能/狂暴，其他条件为省电/智能/极速；next自动跟随当前原厂组。
     绿色档位联动 Windows 节能；切回蓝色/金色恢复此前设置。status 和模拟模式不改变系统设置。
 
     退出码：0 成功；2 参数错误；3 状态未知；4 未启用写入；5 忙；6 失败；7 取消/超时。
