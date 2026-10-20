@@ -7,11 +7,13 @@ namespace XiaomiPerformance.Tray;
 internal sealed class TrayContext : ApplicationContext
 {
     private readonly ModeController controller;
+    private readonly ChargedAcMonitor? automatic;
     private readonly NotifyIcon tray;
     private readonly ContextMenuStrip menu = new();
     private readonly ToolStripMenuItem statusItem = new() { Enabled = false };
     private readonly ToolStripMenuItem sourceItem = new() { Enabled = false };
     private readonly ToolStripMenuItem energyItem = new() { Enabled = false };
+    private readonly ToolStripMenuItem automaticItem = new() { Enabled = false };
     private readonly Dictionary<PerformanceMode, ToolStripMenuItem> modes = new();
     private readonly Dictionary<PerformanceMode, Icon> icons = new();
     private readonly Icon unknownIcon;
@@ -23,9 +25,10 @@ internal sealed class TrayContext : ApplicationContext
     private string? uiFailure;
     private string? lastReadFailure;
 
-    public TrayContext(ModeController controller)
+    public TrayContext(ModeController controller, ChargedAcMonitor? automatic = null)
     {
         this.controller = controller;
+        this.automatic = automatic;
         icons[PerformanceMode.Eco] = CreateIcon(Color.FromArgb(34, 197, 94));
         icons[PerformanceMode.Smart] = CreateIcon(Color.FromArgb(59, 130, 246));
         icons[PerformanceMode.Turbo] = CreateIcon(Color.FromArgb(234, 179, 8));
@@ -35,6 +38,7 @@ internal sealed class TrayContext : ApplicationContext
         menu.Items.Add(statusItem);
         menu.Items.Add(sourceItem);
         menu.Items.Add(energyItem);
+        menu.Items.Add(automaticItem);
         menu.Items.Add(new ToolStripSeparator());
         foreach (var mode in PerformanceModes.Cycle)
         {
@@ -54,7 +58,7 @@ internal sealed class TrayContext : ApplicationContext
         helpItem.Click += (_, _) => MessageBox.Show(
             "双击按绿 → 蓝 → 金循环；右键可直选。\n额定供电：静谧／智能／狂暴。\n其他条件：省电／智能／极速。\n名称自动跟随原厂档位组；灰色表示状态未确认。\n\n" +
             (controller.IsSimulation ? "当前是模拟演示，不改变电脑设置。" : "通过小米原厂服务切换，保留供电限制。请保持管家及原厂服务运行。") +
-            "\n\n绿色档位开启 Windows 节能；蓝色或金色恢复此前状态。手动修改 Windows 节能后，以你的设置为准。\n退出托盘只结束显示，不会主动改变任何模式。\n\n仅在 REDMI Book Pro 16 2026（X7 358H）验证。按现状提供，在适用法律允许范围内不承担使用造成的损失。", "小米性能模式", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            "\n\n绿色档位开启 Windows 节能；蓝色或金色恢复此前状态。手动修改 Windows 节能后，以你的设置为准。\n自动规则：接电且电量高于95%时，切换极速（额定适配器下为狂暴）并关闭 Windows 节能。每次条件进入时执行一次，之后可手动切档；拔电或电量降至95%及以下时重新等待。\n退出托盘只结束显示，不会主动改变任何模式。\n\n仅在 REDMI Book Pro 16 2026（X7 358H）验证。按现状提供，在适用法律允许范围内不承担使用造成的损失。", "小米性能模式", MessageBoxButtons.OK, MessageBoxIcon.Information);
         menu.Items.Add(helpItem);
         var exitItem = new ToolStripMenuItem("退出");
         exitItem.Click += (_, _) => { Diagnostics.Write("user_exit"); ExitThread(); };
@@ -68,7 +72,7 @@ internal sealed class TrayContext : ApplicationContext
         {
             SafeApplyStatus();
             Diagnostics.Heartbeat(controller.Current.ModeLabel);
-            await OperateAsync(controller.RefreshAsync, false);
+            await OperateAsync(PollAsync, false);
         };
         SafeApplyStatus();
         refreshTimer.Start();
@@ -79,8 +83,11 @@ internal sealed class TrayContext : ApplicationContext
     private async void InitialRefresh(object? sender, EventArgs e)
     {
         Application.Idle -= InitialRefresh;
-        await OperateAsync(controller.RefreshAsync, false);
+        await OperateAsync(PollAsync, false);
     }
+
+    private Task<OperationResult> PollAsync(CancellationToken token) => automatic is null
+        ? controller.RefreshAsync(token) : automatic.PollAsync(controller, token);
 
     private async Task OperateAsync(Func<CancellationToken, Task<OperationResult>> operation, bool notify)
     {
@@ -94,6 +101,8 @@ internal sealed class TrayContext : ApplicationContext
             if (!notify && !result.Success && lastReadFailure != result.Message)
                 Diagnostics.Write("refresh_failure", result.Message);
             lastReadFailure = result.Success ? null : result.Message;
+            if (!notify && result.Message.StartsWith("自动规则：", StringComparison.Ordinal))
+                Diagnostics.Write("automatic_operation", new { result.Code, result.Message });
             uiFailure = null;
             SafeApplyStatus();
             if (notify) Diagnostics.Write("user_operation", new { result.Code, result.Message });
@@ -110,7 +119,7 @@ internal sealed class TrayContext : ApplicationContext
         {
             uiFailure = "状态读取异常，正在等待重新读取";
             Diagnostics.Write("operation_exception", error.ToString());
-            // Never repeat a failed mutation; the next timer tick only reads status.
+            // The monitor latches failed mutations; later ticks only reconsider after re-arming.
         }
         finally
         {
@@ -130,6 +139,8 @@ internal sealed class TrayContext : ApplicationContext
         tray.Text = Shorten($"{prefix}小米：{label}{(busy ? " · 正在读取/切换" : "")}", 63);
         statusItem.Text = $"{prefix}{label}{(busy ? "（处理中）" : "")}";
         energyItem.Visible = !controller.IsSimulation;
+        automaticItem.Visible = automatic is not null && !controller.IsSimulation;
+        automaticItem.Text = automatic?.StatusText ?? "";
         var energy = controller.EnergySaver;
         energyItem.Text = energy?.Snapshot is { } power
             ? $"Windows 节能：{(power.Enabled ? "开启" : "关闭")}{(power.SupportsWrites ? "" : "（仅查看）")}" : "Windows 节能：状态未确认";

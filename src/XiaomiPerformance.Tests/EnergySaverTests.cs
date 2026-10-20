@@ -12,6 +12,8 @@ internal static class EnergySaverTests
         }
         static EnergySaverLinkResult Apply(EnergySaverLink link, PerformanceMode mode, EnergySaverCapture? before = null) =>
             link.ApplyAsync(mode, before ?? link.Capture()).GetAwaiter().GetResult();
+        static EnergySaverLinkResult ForceOff(EnergySaverLink link, EnergySaverCapture? before = null) =>
+            link.ForceOffAsync(before ?? link.Capture()).GetAwaiter().GetResult();
 
         var t = Setup();
         _ = t.link.Read(); _ = t.link.Capture();
@@ -80,6 +82,69 @@ internal static class EnergySaverTests
         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(50));
         result = t.link.ApplyAsync(PerformanceMode.Eco, t.link.Capture(), cts.Token).GetAwaiter().GetResult();
         check("Cancellation during validation preserves pending evidence", !result.Success && t.api.Writes == 1 && t.store.Value?.Phase == "pending-enable");
+
+        t = Setup(1, true);
+        result = ForceOff(t.link);
+        check("Automatic high performance disables preexisting energy saver", result.Success && t.api.Writes == 1 && t.api.State is { Override: 2, Enabled: false } && t.store.Value is null);
+        t = Setup(0);
+        result = ForceOff(t.link);
+        check("Automatic high performance replaces automatic saver policy with off", result.Success && t.api.Writes == 1 && t.api.State is { Override: 2, Enabled: false } && t.store.Value is null);
+        t = Setup(0, true);
+        result = ForceOff(t.link);
+        check("Automatic high performance disables an effective automatic saver", result.Success && t.api.Writes == 1 && !t.api.State.Enabled);
+        t = Setup();
+        result = ForceOff(t.link);
+        check("Force off is mutation free when override and effective state are off", result.Success && t.api.Writes == 0 && t.store.Saves == 0 && t.store.Clears == 0);
+        t = Setup(2, true);
+        result = ForceOff(t.link);
+        check("Force off can refresh a stale effective state once", result.Success && t.api.Writes == 1 && !t.api.State.Enabled);
+
+        t = Setup(0);
+        _ = Apply(t.link, PerformanceMode.Eco);
+        t.api.AutoEnabled = true;
+        result = ForceOff(t.link);
+        var offWrites = t.api.Writes;
+        var smart = Apply(t.link, PerformanceMode.Smart);
+        check("Force off releases green ownership so blue cannot turn saver back on", result.Success && smart.Success && offWrites == 2 && t.api.Writes == offWrites && t.api.State is { Override: 2, Enabled: false } && t.store.Value is null);
+        t = Setup();
+        t.store.Value = new("boot-a", 0, false, 9, "owned");
+        result = ForceOff(t.link);
+        check("Already off clears superseded ownership without a native write", result.Success && t.api.Writes == 0 && t.store.Clears == 1 && t.store.Value is null);
+
+        t = Setup(1, true);
+        captured = t.link.Capture();
+        t.api.State = t.api.State with { ChangeStamp = 11 };
+        result = ForceOff(t.link, captured);
+        check("Force off respects changes made while OEM mode was switching", !result.Success && t.api.Writes == 0 && t.store.Saves == 0 && t.api.State.Enabled);
+        t = Setup(1, true);
+        t.api.ConcurrentAfterWrite = true;
+        result = ForceOff(t.link);
+        check("Force off does not claim a concurrent post-write state", !result.Success && t.api.Writes == 1 && t.store.Value?.Phase == "pending-force-off");
+        _ = ForceOff(t.link); _ = Apply(t.link, PerformanceMode.Smart);
+        check("Uncertain force off blocks both replay and old baseline restoration", t.api.Writes == 1 && t.store.Value?.Phase == "pending-force-off");
+        t = Setup(1, true);
+        t.api.RejectWrite = true;
+        result = ForceOff(t.link);
+        _ = ForceOff(t.link);
+        check("Rejected force off is not retried and preserves pending evidence", !result.Success && t.api.Writes == 1 && t.store.Value?.Phase == "pending-force-off");
+        t = Setup(1, true);
+        t.store.FailSave = true;
+        check("Force off requires a saved pending record before native write", !ForceOff(t.link).Success && t.api.Writes == 0);
+        t = Setup(1, true);
+        t.store.Value = new("boot-a", 2, false, 10, "pending-enable");
+        check("Force off preserves an unresolved earlier enable", !ForceOff(t.link).Success && t.api.Writes == 0 && t.store.Value?.Phase == "pending-enable");
+        t.store.Value = t.store.Value! with { Phase = "pending-restore" };
+        check("Force off preserves an unresolved earlier restore", !ForceOff(t.link).Success && t.api.Writes == 0 && t.store.Value?.Phase == "pending-restore");
+        t = Setup(1, true);
+        t.store.Value = new("old-boot", 2, false, 10, "pending-force-off");
+        result = ForceOff(t.link);
+        check("Force off discards stamps from an earlier boot", result.Success && t.api.Writes == 1 && t.store.Value is null && !t.api.State.Enabled);
+        t = Setup(2, true);
+        t.api.NoEffectiveChange = true;
+        using var offCts = new CancellationTokenSource(TimeSpan.FromMilliseconds(50));
+        result = t.link.ForceOffAsync(t.link.Capture(), offCts.Token).GetAwaiter().GetResult();
+        _ = ForceOff(t.link);
+        check("Unconfirmed effective off is recorded without repeated same-value writes", !result.Success && t.api.Writes == 1 && t.store.Value?.Phase == "pending-force-off");
 
         t = Setup();
         var backend = new FakeBackend { Mode = PerformanceMode.Eco };

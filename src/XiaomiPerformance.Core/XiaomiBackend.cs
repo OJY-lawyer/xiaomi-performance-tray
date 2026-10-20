@@ -75,7 +75,7 @@ public sealed class XiaomiBackend : IPerformanceBackend
         bool rated = power.AcLineStatus == 1 && charger.Value == 4;
         var permitted = rated ? PerformanceModes.RatedCycle : PerformanceModes.Cycle;
         if (!permitted.Contains(mode))
-            throw new InvalidOperationException("供电条件对应的原厂档位组已变化，请刷新后按当前名称选择。");
+            throw new ModeEligibilityChangedException("供电条件对应的原厂档位组已变化，未发送切换请求；正在等待原厂更新档位名称。");
 
         // Do not retry SET after a timeout or uncertain reply. Only three reviewed
         // mode values in the active group are allowed; the original service owns all side effects.
@@ -217,6 +217,9 @@ public sealed class XiaomiBackend : IPerformanceBackend
         [DllImport("kernel32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool GetSystemPowerStatus(out PowerStatus status);
     }
 }
+
+/// <summary>Only raised before a vendor SET when a fresh eligibility query changes the allowed group.</summary>
+public sealed class ModeEligibilityChangedException(string message) : InvalidOperationException(message) { }
 
 public readonly record struct VendorFrame(int Operation, int Value);
 public static class VendorProtocol

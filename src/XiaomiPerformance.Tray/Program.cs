@@ -46,7 +46,9 @@ internal static class Program
             if (!autostart) MessageBox.Show("小米性能模式托盘已经在运行。请查看右下角或隐藏图标区域。", "小米性能模式");
             return;
         }
-        try { Application.Run(new TrayContext(BackendFactory.CreateController(options))); }
+        var controller = BackendFactory.CreateController(options);
+        var automatic = controller.IsSimulation ? null : new ChargedAcMonitor(new WindowsPowerStatusSource());
+        try { Application.Run(new TrayContext(controller, automatic)); }
         finally { Diagnostics.Write("message_loop_ended"); instance.ReleaseMutex(); }
     }
 }

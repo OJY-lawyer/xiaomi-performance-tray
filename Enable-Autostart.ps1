@@ -6,6 +6,6 @@ $action = New-ScheduledTaskAction -Execute $exe -Argument '--autostart' -Working
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $user
 $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Limited
 $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew -StartWhenAvailable -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
-Register-ScheduledTask -TaskName 'OJY.XiaomiPerformance.Tray' -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Description '当前用户登录后启动小米性能托盘，启动只读取状态。' -Force | Out-Null
+Register-ScheduledTask -TaskName 'OJY.XiaomiPerformance.Tray' -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Description '当前用户登录后启动小米性能托盘；接电且电量高于95%时自动高性能并关闭Windows节能。' -Force | Out-Null
 Start-ScheduledTask -TaskName 'OJY.XiaomiPerformance.Tray'
 Write-Output '已开启当前用户登录自启。'

@@ -1,4 +1,4 @@
-param([ValidatePattern('^\d+\.\d+\.\d+(?:[-.][A-Za-z0-9.-]+)?$')][string]$Version = '0.2.1')
+param([ValidatePattern('^\d+\.\d+\.\d+(?:[-.][A-Za-z0-9.-]+)?$')][string]$Version = '0.3.0')
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path $PSScriptRoot -Parent
 & (Join-Path $PSScriptRoot 'Build.ps1')

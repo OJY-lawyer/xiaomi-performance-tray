@@ -1,5 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup><ApplicationIcon>Assets\App.ico</ApplicationIcon><Product>小米性能托盘</Product><Version>0.2.1</Version><Description>复用原厂服务与状态的性能模式托盘</Description></PropertyGroup>
+  <PropertyGroup><ApplicationIcon>Assets\App.ico</ApplicationIcon><Product>小米性能托盘</Product><Version>0.3.0</Version><Description>复用原厂服务与状态的性能模式托盘</Description></PropertyGroup>
   <PropertyGroup><OutputType>WinExe</OutputType><UseWindowsForms>true</UseWindowsForms><AssemblyName>XiaomiPerformance.Tray</AssemblyName></PropertyGroup>
   <ItemGroup><ProjectReference Include="../XiaomiPerformance.Core/XiaomiPerformance.Core.csproj" /></ItemGroup>
 </Project>

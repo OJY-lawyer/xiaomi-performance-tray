@@ -14,6 +14,7 @@ internal static class Program
         Directory.CreateDirectory(directory);
         void Check(string name, bool value) { if (!value) throw new Exception(name); checks.Add(new { name, passed = true }); }
         EnergySaverTests.Run(Check);
+        ChargedAcTests.Run(Check);
         foreach (var version in new[] { "5.8.1.121", "5.8.1.130" })
         {
             var root = Path.Combine(OemCompatibility.ManagerBase, version);

@@ -41,7 +41,7 @@ public sealed class FileEnergySaverLedgerStore(string? path = null) : IEnergySav
     public void Clear() => File.Delete(file);
 }
 
-/// <summary>Only ApplyAsync mutates. Caller must hold the shared OEM operation mutex and confirm OEM mode first.</summary>
+/// <summary>Only ApplyAsync and ForceOffAsync mutate. Caller must hold the shared OEM operation mutex and confirm OEM mode first.</summary>
 public sealed class EnergySaverLink(IWindowsEnergySaverApi? api = null, IEnergySaverLedgerStore? store = null)
 {
     private readonly IWindowsEnergySaverApi windows = api ?? new WindowsEnergySaver();
@@ -66,7 +66,7 @@ public sealed class EnergySaverLink(IWindowsEnergySaverApi? api = null, IEnergyS
             var ledger = ledgerStore.Load();
             if (ledger is not null)
             {
-                if (ledger.OriginalOverride > 2 || string.IsNullOrEmpty(ledger.BootId) || ledger.Phase is not ("pending-enable" or "owned" or "pending-restore"))
+                if (ledger.OriginalOverride > 2 || string.IsNullOrEmpty(ledger.BootId) || ledger.Phase is not ("pending-enable" or "owned" or "pending-restore" or "pending-force-off"))
                     throw new InvalidDataException("Windows 节能联动记录格式不受支持。");
                 if (ledger.BootId != now.BootId)
                 {
@@ -114,6 +114,56 @@ public sealed class EnergySaverLink(IWindowsEnergySaverApi? api = null, IEnergyS
         catch (Exception error)
         {
             return new(false, $"小米档位已确认，但 Windows 节能联动未完成：{error.Message}");
+        }
+    }
+
+    /// <summary>For the confirmed automatic high-performance policy: force saver off and release any old green-mode ownership.</summary>
+    public async Task<EnergySaverLinkResult> ForceOffAsync(EnergySaverCapture before, CancellationToken cancellationToken = default)
+    {
+        EnergySaverSnapshot? observed = null;
+        try
+        {
+            if (!before.Success) return new(false, $"小米高性能档已确认，Windows 节能关闭未执行：{before.Error}");
+            var original = before.Snapshot!;
+            var now = observed = windows.Read();
+            if (!now.SupportsWrites) return new(false, "小米高性能档已确认；当前 Windows 版本未验证节能写入，未关闭节能。", now);
+            if (original.BootId != now.BootId) return new(false, "开机周期发生变化，Windows 节能关闭未执行。", now);
+
+            var ledger = ledgerStore.Load();
+            if (ledger is not null)
+            {
+                if (ledger.OriginalOverride > 2 || string.IsNullOrEmpty(ledger.BootId) || ledger.Phase is not ("pending-enable" or "owned" or "pending-restore" or "pending-force-off"))
+                    throw new InvalidDataException("Windows 节能联动记录格式不受支持。");
+                if (ledger.BootId != now.BootId)
+                {
+                    ledgerStore.Clear();
+                    ledger = null;
+                }
+                else if (ledger.Phase != "owned")
+                    return new(false, "发现未完成的 Windows 节能联动记录，未自动重试关闭或覆盖当前设置。", now);
+            }
+            if (original.ChangeStamp != now.ChangeStamp || original.Override != now.Override)
+                return new(false, "切换期间 Windows 节能设置发生变化，未覆盖新设置。", now);
+
+            cancellationToken.ThrowIfCancellationRequested();
+            if (now.Override == 2 && !now.Enabled)
+            {
+                if (ledger is not null) ledgerStore.Clear();
+                return new(true, "Windows 节能已关闭，已解除此前低功耗档的联动。", now);
+            }
+
+            // This policy deliberately replaces the old restore baseline. A pending record must
+            // survive failed verification so neither automatic replay nor manual restore can hide it.
+            var pending = new EnergySaverLedger(now.BootId, now.Override, now.Enabled, unchecked(now.ChangeStamp + 1), "pending-force-off");
+            ledgerStore.Save(pending);
+            windows.WriteOverride(2, now.ChangeStamp);
+            observed = await VerifyAsync(now, 2, false, cancellationToken);
+            ledgerStore.Clear();
+            return new(true, "已关闭 Windows 节能模式，并解除此前低功耗档的联动。", observed);
+        }
+        catch (Exception error)
+        {
+            return new(false, $"小米高性能档已确认，但 Windows 节能关闭未完成：{error.Message}", observed);
         }
     }
 
